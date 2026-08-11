@@ -1,0 +1,5 @@
+# pi-extensions 仓库忽略规则
+node_modules/
+dist/
+.DS_Store
+*.log
