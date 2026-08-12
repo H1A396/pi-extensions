@@ -3,7 +3,7 @@
 // 功能：
 //  - web_search   工具：多供应商搜索（Tavily / Firecrawl / Exa / DuckDuckGo / SearXNG）
 //  - web_extract  工具：网页提取（供应商自带 → r.jina.ai 兜底）
-//  - /web-quota   命令：查看各供应商实时/估算额度
+//  - /myqy-web-tools-quota   命令：查看各供应商实时/估算额度
 //
 // 配置：~/.pi/agent/pi-myqy-web-tools.json
 // 状态：~/.pi/agent/pi-myqy-web-tools-state.json（额度本地持久化）
@@ -160,7 +160,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   });
 
   // ---------------- 额度展示渲染器 ----------------
-  // 让 /web-quota 的输出在对话中呈现为好看的表格卡片
+  // 让 /myqy-web-tools-quota 的输出在对话中呈现为好看的表格卡片
   // （表格用 Markdown 组件渲染，TUI 中规整对齐、支持宽度自适应）
   pi.registerMessageRenderer("web-tools/quota", (message, _options, theme) => {
     const md = message.content as string;
@@ -174,9 +174,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     return box;
   });
 
-  // ---------------- /web-quota 命令 ----------------
-  pi.registerCommand("web-quota", {
-    description: "查看各搜索/提取供应商的剩余额度（web-quota [provider] [--refresh] [--set <余额>]）",
+  // ---------------- /myqy-web-tools-quota 命令 ----------------
+  pi.registerCommand("myqy-web-tools-quota", {
+    description: "查看各搜索/提取供应商的剩余额度（myqy-web-tools-quota [provider] [--refresh] [--set <余额>]）",
     getArgumentCompletions: (prefix) => {
       const ids = config.searchProviders.map((p) => p.id);
       return ids
@@ -263,9 +263,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     },
   });
 
-  // ---------------- /web-usage 命令（按天用量报表） ----------------
-  pi.registerCommand("web-usage", {
-    description: "查看余额型供应商（Exa）的按天用量与校准历史（web-usage [provider]）",
+  // ---------------- /myqy-web-tools-usage 命令（按天用量报表） ----------------
+  pi.registerCommand("myqy-web-tools-usage", {
+    description: "查看余额型供应商（Exa）的按天用量与校准历史（myqy-web-tools-usage [provider]）",
     getArgumentCompletions: (prefix) => {
       const ids = config.searchProviders.map((p) => p.id);
       return ids.filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));

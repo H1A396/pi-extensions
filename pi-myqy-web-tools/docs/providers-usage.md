@@ -41,7 +41,7 @@
 | 提取 `advanced` | 每 5 个成功 URL = 2 credits |
 | Map | 每 10 页 = 1 credit |
 
-> 本扩展搜索固定用 `basic`，即 **1 次搜索 = 1 credit**（/web-quota 中 `used=5` 即 5 次 basic 搜索）。
+> 本扩展搜索固定用 `basic`，即 **1 次搜索 = 1 credit**（/myqy-web-tools-quota 中 `used=5` 即 5 次 basic 搜索）。
 
 ### 注意事项
 
@@ -82,7 +82,7 @@
 ### 注意事项
 
 - 实测 `credit-usage` 接口偶发 `remainingCredits > planCredits`（如剩余 1021 > 总额 1000），
-  本扩展在 /web-quota 显示层已做收敛（clamp 到总额）。
+  本扩展在 /myqy-web-tools-quota 显示层已做收敛（clamp 到总额）。
 - 搜索接口返回 `data[].description` 作为摘要；提取返回 `data.markdown`。
 
 ---
@@ -148,5 +148,5 @@
 ```
 
 - 额度耗尽/失败 → 自动按 `order` 切换下一个，全部失败抛错。
-- `/web-quota` 查看实时额度；`/web-quota <provider> --refresh` 强制刷新。
+- `/myqy-web-tools-quota` 查看实时额度；`/myqy-web-tools-quota <provider> --refresh` 强制刷新。
 - 状态持久化：`~/.pi/agent/pi-myqy-web-tools-state.json`。

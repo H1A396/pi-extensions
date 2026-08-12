@@ -54,10 +54,10 @@
 ### 每日用量记录（dailyUsage）
 
 - 每次 Exa 调用成功后按天累加 `dailyUsage["YYYY-MM-DD"]`（本地日期），持久化在 state
-- 校准（`/web-quota exa --set <余额>`）时记录 `calibratedAt` + `calibratedRemaining`，作为新余额基准；
+- 校准（`/myqy-web-tools-quota exa --set <余额>`）时记录 `calibratedAt` + `calibratedRemaining`，作为新余额基准；
   校准日（含）前的历史保留在 `dailyUsage` 中，但不再参与余额扣减
 - 再次校准 → 更新基准，此前的消耗不重复扣减
-- 查看报表：`/web-usage`（按天用量 + 校准历史）
+- 查看报表：`/myqy-web-tools-usage`（按天用量 + 校准历史）
 
 ### 调用消耗（costDollars）
 
@@ -76,8 +76,8 @@
 
 ## 四、校准与优化方向
 
-1. ✅ **手动校准命令**：`/web-quota exa --set <dashboard余额>`（立即生效，写入内存+磁盘，记录 `calibratedAt`）
-2. ✅ **按天用量报表**：`/web-usage`（每日消耗 + 校准历史）
+1. ✅ **手动校准命令**：`/myqy-web-tools-quota exa --set <dashboard余额>`（立即生效，写入内存+磁盘，记录 `calibratedAt`）
+2. ✅ **按天用量报表**：`/myqy-web-tools-usage`（每日消耗 + 校准历史）
 3. 显示层标注 `~`（估算）前缀 —— 未实现
 4. 若日后 Exa 开放官方余额 API，或能通过 dashboard 抓包获取 api_key_id，可升级为服务端校准 —— 待跟进
 

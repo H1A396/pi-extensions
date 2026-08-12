@@ -6,7 +6,7 @@ pi 扩展：多供应商网络搜索 + 网页提取，带额度管理与自动�
 
 - **`web_search` 工具**：多供应商搜索（Tavily / Firecrawl / Exa / DuckDuckGo / SearXNG），按配置优先级自动选择，额度耗尽自动切换下一个
 - **`web_extract` 工具**：网页提取为 Markdown。优先供应商自带提取（Tavily `/extract`、Firecrawl `/scrape`、Exa `/contents`），失败回退 r.jina.ai
-- **`/web-quota` 命令**：查看各供应商实时/估算剩余额度
+- **`/myqy-web-tools-quota` 命令**：查看各供应商实时/估算剩余额度
 
 ## 配置
 
@@ -74,7 +74,7 @@ pi 扩展：多供应商网络搜索 + 网页提取，带额度管理与自动�
 
 ```
 pi-myqy-web-tools/
-├── index.ts            # 入口：注册 web_search / web_extract 工具 + /web-quota 命令
+├── index.ts            # 入口：注册 web_search / web_extract 工具 + /myqy-web-tools-quota 命令
 ├── types.ts            # 统一类型定义
 ├── config.ts           # 配置读取（fail-open）
 ├── quota.ts            # 额度管理器（实时查询 + 本地累计 + 持久化）
