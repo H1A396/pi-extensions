@@ -237,7 +237,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         }
         lines.push(`| ${q.provider} | ${total} | ${usedStr} | ${remStr} | ${q.unit} | ${status} |`);
       }
-      const text = lines.join("\n");
+      const hasBalanceBased = snapshot.some((q) => q.unit === "usd");
+      // 余额型（Exa）无官方查询接口，末尾追加校准提醒
+      const text = lines.join("\n") + (hasBalanceBased ? CALIBRATE_HINT : "");
 
       if (snapshot.length === 0) {
         ctx.ui.notify("未找到匹配的供应商", "warning");
@@ -298,7 +300,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         ctx.ui.notify("未找到用量记录", "warning");
         return;
       }
-      const text = lines.join("\n");
+      const hasBalanceBased = snapshot.some((q) => q.unit === "usd");
+      // 余额型（Exa）无官方查询接口，末尾追加校准提醒
+      const text = lines.join("\n") + (hasBalanceBased ? CALIBRATE_HINT : "");
       // 非交互模式（print/rpc/json）：直接输出到 stdout
       if (ctx.mode !== "tui") {
         console.log(text);
@@ -327,3 +331,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "\n…（内容已截断）" : s;
 }
+
+/** 余额型供应商（Exa）无官方查询接口时的校准提醒（quota / usage 报表末尾） */
+const CALIBRATE_HINT =
+  "\n\n💡 Exa 无官方余额查询接口，本地估算仅供参考。\n" +
+  "建议定期查看 https://dashboard.exa.ai/billing 的真实余额，\n" +
+  "并用 /myqy-web-tools-quota exa --set <余额> 校准。";

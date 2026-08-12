@@ -110,8 +110,12 @@ export class QuotaManager {
   private freeTotal(id: string, s: ProviderQuotaState): number | undefined {
     if (s.serverQuota?.total !== undefined) return s.serverQuota.total;
     if (this.isBalanceBased(id)) {
-      // 余额型：免费总额始终按「初始 $20 + 每月 $10 × 已过月数」模型估算显示
-      // （校准余额仅作为剩余基准，不改变免费总额展示）
+      // 余额型：已校准 → 以校准余额为总额基准（用户无法准确计算免费总额，
+      //   dashboard 读数即权威总额，已用/剩余与之自洽）；
+      // 未校准 → 按「初始 $20 + 每月 $10 × 已过月数」模型估算
+      if (s.calibratedRemaining !== undefined && s.calibratedAt !== undefined) {
+        return s.calibratedRemaining;
+      }
       return this.exaFreeTotal(s);
     }
     return undefined;
