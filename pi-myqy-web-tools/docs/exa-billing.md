@@ -37,25 +37,36 @@
 |---|---|
 | `GET api.exa.ai/usage` / `/account` / `/billing` | 404，主 API 无余额端点 |
 | `GET admin-api.exa.ai/team-management/api-keys` | `Unauthorized`，团队管理接口个人 key 无权 |
-| `GET admin-api.exa.ai/team-management/api-keys/{id}/usage` | 需要 api_key_id（个人 key 无法获取），返回 400 |
+| `GET admin-api.exa.ai/team-management/api-keys/{id}/usage` | `Unauthorized`（官方文档确认此端点为**团队管理**功能，个人 key 不可用） |
 
 - Dashboard（[Billing 页面](https://dashboard.exa.ai/billing)）是唯一可靠余额来源，但被安全验证拦截，无法脚本化。
 - API 余额耗尽时报 **HTTP 402** + 错误标签：`NO_MORE_CREDITS` / `API_KEY_BUDGET_EXCEEDED` / `TEAM_BUDGET_EXCEEDED`。
 
 ## 三、本地记账模型（当前实现）
 
-由于无服务端校准，Exa 采用**本地精确记账**：
+由于无服务端校准，Exa 采用**本地精确记账 + 校准基准**：
 
 ```
-剩余 ≈ 累计免费总额（$20 初始 + $10 × 已过月数） − 本地累计消耗（Σ costDollars）
+未校准：剩余 ≈ 累计免费总额（$20 初始 + $10 × 已过月数） − 本地累计消耗（Σ costDollars）
+已校准：剩余 = 校准余额 − 校准日（含）起的按天消耗（Σ 每日 dailyUsage）
 ```
+
+### 每日用量记录（dailyUsage）
+
+- 每次 Exa 调用成功后按天累加 `dailyUsage["YYYY-MM-DD"]`（本地日期），持久化在 state
+- 校准（`/web-quota exa --set <余额>`）时记录 `calibratedAt` + `calibratedRemaining`，作为新余额基准；
+  校准日（含）前的历史保留在 `dailyUsage` 中，但不再参与余额扣减
+- 再次校准 → 更新基准，此前的消耗不重复扣减
+- 查看报表：`/web-usage`（按天用量 + 校准历史）
+
+### 调用消耗（costDollars）
 
 - 每次调用成功后解析响应的 `costDollars.total` 精确扣减：
   - **search**（`POST /search`）：实测响应带 `costDollars.total`（如 0.007）✅
   - **extract**（`POST /contents`）：实测响应同样带 `costDollars.total`（如 0.001）✅
 - 响应缺失 `costDollars` 时：**不扣减**（宁可漏记，也不误扣大额 —— 曾因 `costUsd ?? 1` 误扣 1 美元/次导致本地额度被快速"耗尽"的 bug，已修复）
 - 免费总额：`exaInitialFreeUsd`（默认 20）+ `exaMonthlyTopUpUsd`（默认 10）× 已过月数，计费基准为 `exaAccountCreatedAt` 或首次使用时间
-- 状态持久化：`~/.pi/agent/pi-myqy-web-tools-state.json`（`providers.exa.spent`）
+- 状态持久化：`~/.pi/agent/pi-myqy-web-tools-state.json`（`providers.exa.spent` / `dailyUsage` / `calibratedRemaining`）
 
 ### 记账盲区（重要）
 
@@ -65,9 +76,10 @@
 
 ## 四、校准与优化方向
 
-1. 显示层标注 `~`（估算）前缀，避免与官方余额混淆 —— 未实现
-2. 手动校准命令（如 `/web-quota exa --set <dashboard余额>`）—— 未实现
-3. 若日后 Exa 开放官方余额 API，或能通过 dashboard 抓包获取 api_key_id，可升级为服务端校准 —— 待跟进
+1. ✅ **手动校准命令**：`/web-quota exa --set <dashboard余额>`（立即生效，写入内存+磁盘，记录 `calibratedAt`）
+2. ✅ **按天用量报表**：`/web-usage`（每日消耗 + 校准历史）
+3. 显示层标注 `~`（估算）前缀 —— 未实现
+4. 若日后 Exa 开放官方余额 API，或能通过 dashboard 抓包获取 api_key_id，可升级为服务端校准 —— 待跟进
 
 ## 五、相关代码位置
 

@@ -20,6 +20,14 @@ import type {
 
 export const STATE_PATH = join(homedir(), ".pi/agent/pi-myqy-web-tools-state.json");
 
+/** 本地日期键 YYYY-MM-DD（用于按天用量统计） */
+export function localDateKey(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 const EMPTY_STATE: QuotaStateFile = { providers: {}, updatedAt: 0 };
 
 async function loadState(): Promise<QuotaStateFile> {
@@ -63,6 +71,21 @@ export class QuotaManager {
     return this.configs.get(id)?.free === true;
   }
 
+  /**
+   * 校准日（含）之后的按天消耗合计（余额型供应商）。
+   * 即：自最近一次校准起，本扩展记录的总消耗。
+   */
+  private usedSinceCalibration(s: ProviderQuotaState): number {
+    if (s.calibratedAt === undefined) return 0;
+    const calDay = localDateKey(new Date(s.calibratedAt));
+    let sum = 0;
+    const daily = s.dailyUsage ?? {};
+    for (const [day, v] of Object.entries(daily)) {
+      if (day >= calDay) sum += v ?? 0;
+    }
+    return Math.round(sum * 10000) / 10000;
+  }
+
   /** 供应商是否余额型（Exa，用美元计费） */
   isBalanceBased(id: string): boolean {
     return this.configs.get(id)?.id === "exa";
@@ -84,6 +107,10 @@ export class QuotaManager {
   private freeTotal(id: string, s: ProviderQuotaState): number | undefined {
     if (s.serverQuota?.total !== undefined) return s.serverQuota.total;
     if (this.isBalanceBased(id)) {
+      // 已校准：以校准余额为基准（余额从校准时刻起按天扣减）
+      if (s.calibratedRemaining !== undefined && s.calibratedAt !== undefined) {
+        return s.calibratedRemaining;
+      }
       return this.exaFreeTotal(s);
     }
     return undefined;
@@ -98,10 +125,15 @@ export class QuotaManager {
     return exaInitialFreeUsd + Math.max(0, months) * exaMonthlyTopUpUsd;
   }
 
-  /** 有效剩余免费额度：优先服务端快照，其次本地估算 */
+  /** 有效剩余免费额度：优先服务端快照，其次本地估算/校准基准 */
   private effectiveRemaining(id: string, s: ProviderQuotaState): number | undefined {
     if (s.serverQuota?.remaining !== undefined) return s.serverQuota.remaining;
     if (this.isBalanceBased(id)) {
+      // 已校准：余额 = 校准余额 − 校准日（含）起的按天消耗
+      if (s.calibratedRemaining !== undefined && s.calibratedAt !== undefined) {
+        const used = this.usedSinceCalibration(s);
+        return Math.max(0, Math.round((s.calibratedRemaining - used) * 10000) / 10000);
+      }
       const total = this.exaFreeTotal(s);
       return total !== undefined ? Math.max(0, total - (s.spent ?? 0)) : undefined;
     }
@@ -236,13 +268,22 @@ export class QuotaManager {
     const increment = this.isBalanceBased(id) ? (costUsd ?? 0) : (costUsd ?? 1);
     // 美元消耗保留 4 位小数，避免浮点误差污染 state 文件
     const spent = Math.round(((next.spent ?? 0) + increment) * 10000) / 10000;
+    // 余额型：按天累加消耗历史（持久化，供每日用量报表）
+    let dailyUsage = next.dailyUsage ?? {};
+    if (this.isBalanceBased(id) && increment > 0) {
+      const today = localDateKey();
+      dailyUsage = {
+        ...dailyUsage,
+        [today]: Math.round(((dailyUsage[today] ?? 0) + increment) * 10000) / 10000,
+      };
+    }
     const remaining =
       this.isBalanceBased(id) && costUsd !== undefined
-        ? undefined // Exa 剩余由 effectiveRemaining 动态计算（免费总额 - 累计消耗）
+        ? undefined // Exa 剩余由 effectiveRemaining 动态计算（校准余额/免费总额 - 累计消耗）
         : next.remaining !== undefined
           ? Math.max(0, next.remaining - 1)
           : undefined;
-    this.state.providers[id] = { ...next, spent, remaining };
+    this.state.providers[id] = { ...next, spent, dailyUsage, remaining };
     await saveState(this.state);
   }
 
@@ -282,8 +323,10 @@ export class QuotaManager {
   async calibrate(id: string, remaining: number): Promise<void> {
     const s = this.state.providers[id] ?? {};
     if (this.isFree(id)) return; // 免费无限供应商无需校准
+    const now = Date.now();
     if (this.isBalanceBased(id)) {
-      // 余额型（Exa）：剩余 → 换算为累计消耗
+      // 余额型（Exa）：以权威余额为基准（calibratedRemaining），
+      // 余额从此（校准日含）起按天扣减；spent 仍换算以便兼容旧展示
       const total = this.exaFreeTotal(s);
       const spent =
         total !== undefined
@@ -292,18 +335,20 @@ export class QuotaManager {
       this.state.providers[id] = {
         ...s,
         spent,
+        calibratedRemaining: remaining,
+        calibratedAt: now,
         exhausted: false,
         exhaustedAt: undefined,
-        calibratedAt: Date.now(),
       };
     } else {
       // 服务端型：覆盖本地剩余快照（下次 TTL 刷新会以服务端为准重新校准）
       this.state.providers[id] = {
         ...s,
         remaining,
+        calibratedRemaining: remaining,
+        calibratedAt: now,
         exhausted: false,
         exhaustedAt: undefined,
-        calibratedAt: Date.now(),
       };
     }
     await saveState(this.state);
@@ -323,14 +368,21 @@ export class QuotaManager {
         out.push(quota);
       } else {
         const unit = this.isBalanceBased(id) ? "usd" : "credits";
-        // 余额型供应商（Exa）：总额 = 累计免费额度，剩余 = 总额 - 累计消耗
+        // 余额型供应商（Exa）：总额 = 累计免费额度或校准余额，剩余 = 总额 - 消耗
         const total = this.freeTotal(id, s);
         const remaining = this.effectiveRemaining(id, s);
         const ratio = this.remainingRatio(id, s);
+        // 已校准余额型：已用 = 校准日（含）起的消耗（与校准余额基准一致）
+        const used =
+          this.isBalanceBased(id) &&
+          s.calibratedRemaining !== undefined &&
+          s.calibratedAt !== undefined
+            ? this.usedSinceCalibration(s)
+            : (s.spent ?? 0);
         out.push({
           provider: id,
           total,
-          used: s.spent ?? 0,
+          used,
           remaining,
           unit,
           updatedAt: s.lastCheck ?? 0,

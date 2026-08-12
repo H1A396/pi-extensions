@@ -141,6 +141,10 @@ export interface ProviderQuotaState {
   baselineAt?: number;
   /** 最近一次手动校准时间戳（/web-quota --set） */
   calibratedAt?: number;
+  /** 最近一次手动校准时的权威剩余额度（余额型供应商以它为余额基准） */
+  calibratedRemaining?: number;
+  /** 按天消耗历史（本地累计）：如 { "2026-08-12": 0.105 }，键为本地日期 YYYY-MM-DD */
+  dailyUsage?: Record<string, number>;
 }
 
 export interface QuotaStateFile {

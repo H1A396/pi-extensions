@@ -263,6 +263,59 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     },
   });
 
+  // ---------------- /web-usage 命令（按天用量报表） ----------------
+  pi.registerCommand("web-usage", {
+    description: "查看余额型供应商（Exa）的按天用量与校准历史（web-usage [provider]）",
+    getArgumentCompletions: (prefix) => {
+      const ids = config.searchProviders.map((p) => p.id);
+      return ids.filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
+    },
+    handler: async (args, ctx) => {
+      const target = args.trim().split(/\s+/)[0] ?? undefined;
+      const snapshot = await quota.snapshot();
+      const lines: string[] = [];
+      for (const q of snapshot) {
+        if (target && q.provider !== target) continue;
+        const s = quota.getState(q.provider);
+        const daily = s.dailyUsage ?? {};
+        const hasCal = s.calibratedAt !== undefined || s.calibratedRemaining !== undefined;
+        if (Object.keys(daily).length === 0 && !hasCal && q.unit !== "usd") continue;
+        lines.push(`### ${q.provider}`);
+        if (s.calibratedAt !== undefined && s.calibratedRemaining !== undefined) {
+          lines.push(
+            `- 最近校准: ${new Date(s.calibratedAt).toLocaleString()} · 校准余额 = $${s.calibratedRemaining.toFixed(2)}`,
+          );
+        }
+        if (Object.keys(daily).length > 0) {
+          lines.push("| 日期 | 消耗 (USD) |", "|---|---|");
+          const rows = Object.entries(daily).sort((a, b) => a[0].localeCompare(b[0]));
+          for (const [day, v] of rows) lines.push(`| ${day} | $${(v ?? 0).toFixed(4)} |`);
+        } else {
+          lines.push("（暂无按天用量记录）");
+        }
+      }
+      if (lines.length === 0) {
+        ctx.ui.notify("未找到用量记录", "warning");
+        return;
+      }
+      const text = lines.join("\n");
+      // 非交互模式（print/rpc/json）：直接输出到 stdout
+      if (ctx.mode !== "tui") {
+        console.log(text);
+        return;
+      }
+      try {
+        pi.sendMessage({
+          customType: "web-tools/quota",
+          content: text,
+          display: true,
+          details: { providerCount: lines.length, time: new Date().toLocaleTimeString() },
+        });
+      } catch {}
+      ctx.ui.notify("已生成每日用量报表", "info");
+    },
+  });
+
   // 会话启动时：刷新一次全部额度（异步，不阻塞）
   pi.on("session_start", () => {
     setTimeout(() => {
