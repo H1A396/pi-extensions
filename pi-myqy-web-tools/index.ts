@@ -12,7 +12,8 @@
 // DuckDuckGo / SearXNG 为免费无限兜底，保证始终可搜。
 
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Box, Text } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Box, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 import { readConfig } from "./config.ts";
@@ -160,21 +161,22 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
   // ---------------- 额度展示渲染器 ----------------
   // 让 /web-quota 的输出在对话中呈现为好看的表格卡片
+  // （表格用 Markdown 组件渲染，TUI 中规整对齐、支持宽度自适应）
   pi.registerMessageRenderer("web-tools/quota", (message, _options, theme) => {
     const md = message.content as string;
     const details = message.details as { providerCount: number; time: string } | undefined;
     const header = details
       ? `📊 供应商额度（${details.providerCount} 个）· ${details.time}`
       : "📊 供应商额度";
-    const text = `${header}\n\n${md}`;
     const box = new Box(0, 1, (t) => theme.bg("customMessageBg", t));
-    box.addChild(new Text(text, 0, 0));
+    box.addChild(new Text(header, 0, 0));
+    box.addChild(new Markdown(md, 0, 0, getMarkdownTheme()));
     return box;
   });
 
   // ---------------- /web-quota 命令 ----------------
   pi.registerCommand("web-quota", {
-    description: "查看各搜索/提取供应商的剩余额度（web-quota [provider] [--refresh]）",
+    description: "查看各搜索/提取供应商的剩余额度（web-quota [provider] [--refresh] [--set <余额>]）",
     getArgumentCompletions: (prefix) => {
       const ids = config.searchProviders.map((p) => p.id);
       return ids
@@ -184,7 +186,22 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     handler: async (args, ctx) => {
       const tokens = args.trim().split(/\s+/).filter(Boolean);
       const refresh = tokens.includes("--refresh");
-      const targets = tokens.filter((t) => t !== "--refresh");
+      const setIdx = tokens.indexOf("--set");
+      const setTarget = setIdx > 0 ? tokens[setIdx - 1] : undefined;
+      const setValue =
+        setIdx >= 0 && setIdx + 1 < tokens.length ? Number(tokens[setIdx + 1]) : NaN;
+      // 排除 --refresh / --set 及其前后参数后的供应商目标
+      const targets = tokens.filter((t, i) => {
+        if (t === "--refresh" || t === "--set") return false;
+        if (setIdx >= 0 && (i === setIdx - 1 || i === setIdx + 1)) return false;
+        return true;
+      });
+
+      // --set：手动校准某供应商剩余额度（Exa 无服务端接口，以 dashboard 读数为准）
+      if (setTarget && !Number.isNaN(setValue) && setValue >= 0) {
+        await quota.calibrate(setTarget, setValue).catch(() => {});
+        ctx.ui.notify(`已校准 ${setTarget} 剩余额度 = ${setValue}（立即生效）`, "info");
+      }
 
       // --refresh：清除 TTL 缓存后重新拉取
       if (refresh) {
@@ -200,18 +217,25 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
       const lines = ["| 供应商 | 免费总额 | 已用 | 剩余 | 单位 | 状态 |", "|---|---|---|---|---|---|"];
       for (const q of snapshot) {
-        const total = q.total !== undefined ? String(q.total) : "∞";
-        const remaining = q.remaining !== undefined ? String(q.remaining) : "—";
-        const used = q.used !== undefined ? String(q.used) : "—";
+        const isUsd = q.unit === "usd";
+        // 数值格式化：usd 保留 2 位小数，credits 取整数
+        const fmt = (v: number) => (isUsd ? v.toFixed(2) : Number.isInteger(v) ? String(v) : v.toFixed(2));
+        // API 数据不一致时（如剩余 > 总额）收敛显示，避免怪异数字
+        const total = q.total !== undefined ? fmt(q.total) : "∞";
+        const used = q.used !== undefined && q.total !== undefined ? Math.min(q.used, q.total) : q.used;
+        const remaining =
+          q.remaining !== undefined && q.total !== undefined ? Math.min(q.remaining, q.total) : q.remaining;
+        const usedStr = used !== undefined ? fmt(used) : "—";
+        const remStr = remaining !== undefined ? fmt(remaining) : "—";
         let status = "正常";
         if (q.exhausted) {
           status = "⚠️ 耗尽";
-        } else if (q.remaining !== undefined && q.total !== undefined && q.total > 0) {
-          const ratio = q.remaining / q.total;
+        } else if (remaining !== undefined && q.total !== undefined && q.total > 0) {
+          const ratio = remaining / q.total;
           if (ratio <= config.quota.exhaustedThresholdPercent / 100) status = "⚠️ 耗尽";
           else if (ratio <= config.quota.lowThresholdPercent / 100) status = "低配额";
         }
-        lines.push(`| ${q.provider} | ${total} | ${used} | ${remaining} | ${q.unit} | ${status} |`);
+        lines.push(`| ${q.provider} | ${total} | ${usedStr} | ${remStr} | ${q.unit} | ${status} |`);
       }
       const text = lines.join("\n");
 

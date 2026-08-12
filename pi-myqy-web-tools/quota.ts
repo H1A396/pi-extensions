@@ -272,6 +272,43 @@ export class QuotaManager {
     await saveState(this.state);
   }
 
+  /**
+   * 手动校准本地剩余额度（写入内存 + 磁盘，立即生效）。
+   * 用于：余额型供应商（Exa）无服务端接口，以官方 dashboard 读数为准时校准；
+   * 或本地估算与真实余额出现偏差（如存在不经本扩展的调用）时修正。
+   * @param id 供应商 id
+   * @param remaining 权威剩余额度（从 dashboard / 服务商控制台读取）
+   */
+  async calibrate(id: string, remaining: number): Promise<void> {
+    const s = this.state.providers[id] ?? {};
+    if (this.isFree(id)) return; // 免费无限供应商无需校准
+    if (this.isBalanceBased(id)) {
+      // 余额型（Exa）：剩余 → 换算为累计消耗
+      const total = this.exaFreeTotal(s);
+      const spent =
+        total !== undefined
+          ? Math.max(0, Math.round((total - remaining) * 10000) / 10000)
+          : s.spent;
+      this.state.providers[id] = {
+        ...s,
+        spent,
+        exhausted: false,
+        exhaustedAt: undefined,
+        calibratedAt: Date.now(),
+      };
+    } else {
+      // 服务端型：覆盖本地剩余快照（下次 TTL 刷新会以服务端为准重新校准）
+      this.state.providers[id] = {
+        ...s,
+        remaining,
+        exhausted: false,
+        exhaustedAt: undefined,
+        calibratedAt: Date.now(),
+      };
+    }
+    await saveState(this.state);
+  }
+
   /** 汇总所有已注册供应商的额度视图（供 /web-quota 展示） */
   async snapshot(): Promise<QuotaInfo[]> {
     const out: QuotaInfo[] = [];

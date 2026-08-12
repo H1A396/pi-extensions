@@ -139,6 +139,8 @@ export interface ProviderQuotaState {
   exhaustedAt?: number;
   /** 余额型供应商（Exa）计费基准时间戳（账号创建/首次使用） */
   baselineAt?: number;
+  /** 最近一次手动校准时间戳（/web-quota --set） */
+  calibratedAt?: number;
 }
 
 export interface QuotaStateFile {
