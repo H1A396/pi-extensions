@@ -1,0 +1,119 @@
+// pi-myqy-web-tools 统一类型定义
+// ---------------------------------------------------------------
+
+/** 供应商配置（来自 ~/.pi/agent/pi-myqy-web-tools.json） */
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  apiKey?: string;
+  /** 搜索/提取优先级，越小越优先 */
+  order: number;
+  supports: ("search" | "extract")[];
+  /** 免费无限供应商（如 DuckDuckGo / SearXNG），不参与额度管理 */
+  free?: boolean;
+  /** 自建服务地址（如 SearXNG 实例 URL） */
+  url?: string;
+}
+
+/** 扩展总配置 */
+export interface WebToolsConfig {
+  version?: number;
+  quota: {
+    /** 额度查询结果缓存时长（秒） */
+    refreshTtlSeconds: number;
+    /** 剩余额度低于此值视为"低配额" */
+    lowThreshold: number;
+    /** 剩余额度等于/低于此值视为耗尽 */
+    exhaustedThreshold: number;
+    /** Exa 账户初始余额（美元） */
+    exaBalanceUsd: number;
+  };
+  searchProviders: ProviderConfig[];
+  extract: {
+    strategy: "provider-first";
+    /** 提取优先使用的供应商 id（按顺序） */
+    providers: string[];
+    /** 提取兜底方案 id 列表（如 "r.jina.ai"） */
+    fallbacks: string[];
+  };
+}
+
+/** 搜索请求 */
+export interface SearchOptions {
+  query: string;
+  maxResults?: number;
+  signal?: AbortSignal;
+}
+
+/** 单条搜索结果 */
+export interface SearchItem {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+/** 搜索响应（统一格式） */
+export interface SearchResponse {
+  provider: string;
+  results: SearchItem[];
+  /** 本次调用消耗（美元），Exa 等按量计费用 */
+  costUsd?: number;
+}
+
+/** 提取请求 */
+export interface ExtractOptions {
+  url: string;
+  signal?: AbortSignal;
+}
+
+/** 提取响应（统一格式，Markdown 内容） */
+export interface ExtractResponse {
+  provider: string;
+  title?: string;
+  content: string;
+}
+
+/** 额度信息（统一格式） */
+export interface QuotaInfo {
+  provider: string;
+  /** 总限额；undefined = 无限 */
+  total?: number;
+  used: number;
+  remaining?: number;
+  /** 单位："credits" | "usd" | "requests" | "unlimited" */
+  unit: string;
+  updatedAt: number;
+  /** 是否已标记耗尽 */
+  exhausted?: boolean;
+}
+
+/** 供应商统一接口 */
+export interface SearchProvider {
+  readonly id: string;
+  search(options: SearchOptions): Promise<SearchResponse>;
+  extract?(options: ExtractOptions): Promise<ExtractResponse>;
+  /** 可选：查询实时额度（无则用本地累计） */
+  getQuota?(): Promise<QuotaInfo>;
+}
+
+/** 额度状态（持久化到 ~/.pi/agent/pi-myqy-web-tools-state.json） */
+export interface ProviderQuotaState {
+  /** 本地估算剩余额度（Exa 用美元余额；其他为积分） */
+  remaining?: number;
+  /** 本地累计消耗 */
+  spent?: number;
+  /** 上次从服务端同步的额度快照 */
+  serverQuota?: QuotaInfo;
+  /** 最近一次额度刷新时间戳 */
+  lastCheck?: number;
+  /** 是否已标记耗尽（避免反复尝试） */
+  exhausted?: boolean;
+  /** 耗尽快照时间戳 */
+  exhaustedAt?: number;
+}
+
+export interface QuotaStateFile {
+  providers: Record<string, ProviderQuotaState>;
+  updatedAt: number;
+}

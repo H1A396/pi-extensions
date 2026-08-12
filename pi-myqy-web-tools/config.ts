@@ -1,0 +1,90 @@
+// pi-myqy-web-tools 配置读取
+// ---------------------------------------------------------------
+// 配置路径：~/.pi/agent/pi-myqy-web-tools.json
+// 缺失/无效 → 返回内置默认配置（fail-open，仅保留免费兜底供应商）
+
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import type { ProviderConfig, WebToolsConfig } from "./types.ts";
+
+export const CONFIG_PATH = join(homedir(), ".pi/agent/pi-myqy-web-tools.json");
+
+const DEFAULT_CONFIG: WebToolsConfig = {
+  quota: {
+    refreshTtlSeconds: 300,
+    lowThreshold: 50,
+    exhaustedThreshold: 0,
+    exaBalanceUsd: 10,
+  },
+  searchProviders: [
+    { id: "duckduckgo", name: "DuckDuckGo", enabled: true, order: 90, supports: ["search"], free: true },
+  ],
+  extract: {
+    strategy: "provider-first",
+    providers: [],
+    fallbacks: ["r.jina.ai"],
+  },
+};
+
+function sanitizeProvider(raw: any): ProviderConfig | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const id = typeof raw.id === "string" ? raw.id : "";
+  if (!id) return null;
+  const supports: ("search" | "extract")[] = [];
+  if (Array.isArray(raw.supports)) {
+    for (const s of raw.supports) {
+      if (s === "search" || s === "extract") supports.push(s);
+    }
+  }
+  return {
+    id,
+    name: typeof raw.name === "string" ? raw.name : id,
+    enabled: raw.enabled !== false,
+    apiKey: typeof raw.apiKey === "string" && raw.apiKey ? raw.apiKey : undefined,
+    order: typeof raw.order === "number" ? raw.order : 100,
+    supports,
+    free: raw.free === true,
+    url: typeof raw.url === "string" ? raw.url : undefined,
+  };
+}
+
+export async function readConfig(): Promise<WebToolsConfig> {
+  try {
+    const raw = JSON.parse(await readFile(CONFIG_PATH, "utf8"));
+    if (raw === null || typeof raw !== "object") return DEFAULT_CONFIG;
+
+    const providers: ProviderConfig[] = [];
+    if (Array.isArray(raw.searchProviders)) {
+      for (const p of raw.searchProviders) {
+        const sp = sanitizeProvider(p);
+        if (sp && (sp.enabled || sp.apiKey || sp.free)) providers.push(sp);
+      }
+    }
+
+    const quota = {
+      refreshTtlSeconds:
+        typeof raw.quota?.refreshTtlSeconds === "number" ? raw.quota.refreshTtlSeconds : 300,
+      lowThreshold: typeof raw.quota?.lowThreshold === "number" ? raw.quota.lowThreshold : 50,
+      exhaustedThreshold:
+        typeof raw.quota?.exhaustedThreshold === "number" ? raw.quota.exhaustedThreshold : 0,
+      exaBalanceUsd: typeof raw.quota?.exaBalanceUsd === "number" ? raw.quota.exaBalanceUsd : 10,
+    };
+
+    const extract = {
+      strategy: "provider-first" as const,
+      providers: Array.isArray(raw.extract?.providers)
+        ? raw.extract.providers.map(String)
+        : [],
+      fallbacks: Array.isArray(raw.extract?.fallbacks)
+        ? raw.extract.fallbacks.map(String)
+        : ["r.jina.ai"],
+    };
+
+    // 若未显式配置任何供应商 → 回退到默认免费兜底
+    if (providers.length === 0) return { ...DEFAULT_CONFIG, quota, extract };
+    return { version: raw.version, quota, searchProviders: providers, extract };
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}

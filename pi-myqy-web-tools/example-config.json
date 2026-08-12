@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "$comment": "pi-myqy-web-tools 配置文件示例。复制到 ~/.pi/agent/pi-myqy-web-tools.json 使用。只配置 API key，不存任何账号密码。",
+
+  "quota": {
+    "refreshTtlSeconds": 300,
+    "lowThreshold": 50,
+    "exhaustedThreshold": 0,
+    "exaBalanceUsd": 10.0
+  },
+
+  "searchProviders": [
+    {
+      "id": "tavily",
+      "name": "Tavily",
+      "enabled": true,
+      "apiKey": "tvly-xxxx",
+      "order": 1,
+      "supports": ["search", "extract"]
+    },
+    {
+      "id": "firecrawl",
+      "name": "Firecrawl",
+      "enabled": true,
+      "apiKey": "fc-xxxx",
+      "order": 2,
+      "supports": ["search", "extract"]
+    },
+    {
+      "id": "exa",
+      "name": "Exa",
+      "enabled": true,
+      "apiKey": "xxxx-xxxx",
+      "order": 3,
+      "supports": ["search", "extract"]
+    },
+    {
+      "id": "duckduckgo",
+      "name": "DuckDuckGo",
+      "enabled": true,
+      "order": 90,
+      "supports": ["search"],
+      "free": true
+    },
+    {
+      "id": "searxng",
+      "name": "SearXNG",
+      "enabled": false,
+      "order": 91,
+      "url": "https://your-searxng-instance.org",
+      "supports": ["search"],
+      "free": true
+    }
+  ],
+
+  "extract": {
+    "strategy": "provider-first",
+    "providers": ["tavily", "firecrawl", "exa"],
+    "fallbacks": ["r.jina.ai"]
+  }
+}
