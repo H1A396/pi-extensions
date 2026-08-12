@@ -88,3 +88,8 @@ pi-myqy-web-tools/
 新增供应商：在 `providers/` 下实现 `SearchProvider` 接口（`search` / 可选 `extract` / 可选 `getQuota`），在 `index.ts` 的 switch 中注册，配置文件中添加即可。
 
 部署：修改源码后运行 `./deploy.sh`，pi 中 `/reload` 生效。
+
+## 文档
+
+- [`docs/providers-usage.md`](docs/providers-usage.md) — 供应商使用说明（免费计划、注册、端点、计费规则、限速）
+- [`docs/exa-billing.md`](docs/exa-billing.md) — Exa 计费方式与本地记账模型（含实测验证）
