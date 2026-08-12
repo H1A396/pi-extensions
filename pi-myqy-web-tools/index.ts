@@ -184,6 +184,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         .map((v) => ({ value: v, label: v }));
     },
     handler: async (args, ctx) => {
+      // 先与磁盘同步（外部脚本/手工校准可能更新过 state）
+      await quota.syncFromDisk().catch(() => {});
       const tokens = args.trim().split(/\s+/).filter(Boolean);
       const refresh = tokens.includes("--refresh");
       const setIdx = tokens.indexOf("--set");
@@ -273,6 +275,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       return ids.filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
     },
     handler: async (args, ctx) => {
+      // 先与磁盘同步（外部脚本/手工校准可能更新过 state）
+      await quota.syncFromDisk().catch(() => {});
       const target = args.trim().split(/\s+/)[0] ?? undefined;
       const snapshot = await quota.snapshot();
       const lines: string[] = [];

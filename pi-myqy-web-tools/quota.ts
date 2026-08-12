@@ -41,6 +41,8 @@ async function loadState(): Promise<QuotaStateFile> {
 }
 
 async function saveState(state: QuotaStateFile): Promise<void> {
+  // 每次写盘都更新时间戳，供多进程/外部校准检测"磁盘比内存新"
+  state.updatedAt = Date.now();
   try {
     await writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
   } catch {}
@@ -64,6 +66,23 @@ export class QuotaManager {
 
   async init(): Promise<void> {
     this.state = await loadState();
+  }
+
+  /**
+   * 与磁盘同步：若磁盘 state 比内存新（外部进程/脚本更新过），则重新加载。
+   * 在 /myqy-web-tools-quota、/myqy-web-tools-usage 等命令执行前调用，
+   * 避免"外部改动不生效"（如脚本记账、手工编辑 state 文件）。
+   * @returns 是否发生了重新加载
+   */
+  async syncFromDisk(): Promise<boolean> {
+    try {
+      const disk = await loadState();
+      if (disk.updatedAt > this.state.updatedAt) {
+        this.state = disk;
+        return true;
+      }
+    } catch {}
+    return false;
   }
 
   /** 供应商是否免费（不参与额度管理） */
