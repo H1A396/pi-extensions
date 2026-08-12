@@ -73,15 +73,18 @@ export class QuotaManager {
 
   /**
    * 校准日（含）之后的按天消耗合计（余额型供应商）。
-   * 即：自最近一次校准起，本扩展记录的总消耗。
+   * 即：自最近一次校准时刻起，本扩展记录的总消耗。
+   * 校准日当天只统计校准时刻之后的消耗（校准前的已包含在校准余额中）。
    */
   private usedSinceCalibration(s: ProviderQuotaState): number {
     if (s.calibratedAt === undefined) return 0;
     const calDay = localDateKey(new Date(s.calibratedAt));
+    const baseline = s.calibratedDayUsed ?? 0;
     let sum = 0;
     const daily = s.dailyUsage ?? {};
     for (const [day, v] of Object.entries(daily)) {
-      if (day >= calDay) sum += v ?? 0;
+      if (day > calDay) sum += v ?? 0;
+      else if (day === calDay) sum += Math.max(0, (v ?? 0) - baseline);
     }
     return Math.round(sum * 10000) / 10000;
   }
@@ -107,10 +110,8 @@ export class QuotaManager {
   private freeTotal(id: string, s: ProviderQuotaState): number | undefined {
     if (s.serverQuota?.total !== undefined) return s.serverQuota.total;
     if (this.isBalanceBased(id)) {
-      // 已校准：以校准余额为基准（余额从校准时刻起按天扣减）
-      if (s.calibratedRemaining !== undefined && s.calibratedAt !== undefined) {
-        return s.calibratedRemaining;
-      }
+      // 余额型：免费总额始终按「初始 $20 + 每月 $10 × 已过月数」模型估算显示
+      // （校准余额仅作为剩余基准，不改变免费总额展示）
       return this.exaFreeTotal(s);
     }
     return undefined;
@@ -326,17 +327,20 @@ export class QuotaManager {
     const now = Date.now();
     if (this.isBalanceBased(id)) {
       // 余额型（Exa）：以权威余额为基准（calibratedRemaining），
-      // 余额从此（校准日含）起按天扣减；spent 仍换算以便兼容旧展示
+      // 余额从此（校准时刻）起按天扣减；spent 仍换算以便兼容旧展示
       const total = this.exaFreeTotal(s);
       const spent =
         total !== undefined
           ? Math.max(0, Math.round((total - remaining) * 10000) / 10000)
           : s.spent;
+      const today = localDateKey(new Date(now));
       this.state.providers[id] = {
         ...s,
         spent,
         calibratedRemaining: remaining,
         calibratedAt: now,
+        // 校准时刻当天的消耗快照：该部分已包含在校准余额中，不再重复扣减
+        calibratedDayUsed: (s.dailyUsage?.[today] ?? 0),
         exhausted: false,
         exhaustedAt: undefined,
       };

@@ -143,6 +143,8 @@ export interface ProviderQuotaState {
   calibratedAt?: number;
   /** 最近一次手动校准时的权威剩余额度（余额型供应商以它为余额基准） */
   calibratedRemaining?: number;
+  /** 校准日当天、校准时刻之前的消耗快照（该部分已包含在校准余额中，不再重复扣减） */
+  calibratedDayUsed?: number;
   /** 按天消耗历史（本地累计）：如 { "2026-08-12": 0.105 }，键为本地日期 YYYY-MM-DD */
   dailyUsage?: Record<string, number>;
 }

@@ -54,10 +54,13 @@
 ### 每日用量记录（dailyUsage）
 
 - 每次 Exa 调用成功后按天累加 `dailyUsage["YYYY-MM-DD"]`（本地日期），持久化在 state
-- 校准（`/myqy-web-tools-quota exa --set <余额>`）时记录 `calibratedAt` + `calibratedRemaining`，作为新余额基准；
-  校准日（含）前的历史保留在 `dailyUsage` 中，但不再参与余额扣减
-- 再次校准 → 更新基准，此前的消耗不重复扣减
+- 校准（`/myqy-web-tools-quota exa --set <余额>`）时记录：
+  - `calibratedAt` + `calibratedRemaining`：校准余额基准
+  - `calibratedDayUsed`：校准时刻当天已消耗快照（该部分已包含在校准余额中，不再重复扣减）
+- 余额计算 = 校准余额 − 校准时刻起的按天消耗（校准日只计校准时刻后的部分）
+- 再次校准 → 更新基准，此前消耗不重复扣减；历史保留在 `dailyUsage` 供报表
 - 查看报表：`/myqy-web-tools-usage`（按天用量 + 校准历史）
+- **展示**：免费总额列始终显示免费总额模型（$20 + $10×月数）；已用列为校准时刻起的消耗；剩余列为校准余额 − 已用
 
 ### 调用消耗（costDollars）
 
