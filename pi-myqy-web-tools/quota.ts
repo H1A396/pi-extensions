@@ -109,19 +109,51 @@ export class QuotaManager {
 
     const s = this.state.providers[id] ?? {};
     const ttl = this.quotaCfg.refreshTtlSeconds;
-    if (s.lastCheck && Date.now() - s.lastCheck < ttl * 1000 && s.serverQuota) {
+    // 缓存命中：未过期、有快照、且未被标记耗尽（耗尽状态必须重新验证）
+    if (s.lastCheck && Date.now() - s.lastCheck < ttl * 1000 && s.serverQuota && !s.exhausted) {
       return s.serverQuota;
     }
 
     try {
       const quota = await provider.getQuota();
+      const exhaustedNow =
+        quota.remaining !== undefined && quota.remaining <= this.quotaCfg.exhaustedThreshold;
       this.state.providers[id] = {
         ...s,
         serverQuota: quota,
         lastCheck: Date.now(),
         remaining: quota.remaining,
         spent: quota.used,
-        exhausted: quota.remaining !== undefined && quota.remaining <= this.quotaCfg.exhaustedThreshold ? true : s.exhausted,
+        // 服务端额度恢复正常 → 自动解除耗尽标记
+        exhausted: exhaustedNow ? true : false,
+        exhaustedAt: exhaustedNow ? Date.now() : undefined,
+      };
+      await saveState(this.state);
+      return quota;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** 强制刷新某供应商的服务端额度（忽略 TTL 缓存） */
+  async refreshQuotaForce(id: string): Promise<QuotaInfo | undefined> {
+    const provider = this.providers.get(id);
+    if (!provider?.getQuota) return undefined;
+    if (this.isFree(id)) return undefined;
+
+    const s = this.state.providers[id] ?? {};
+    try {
+      const quota = await provider.getQuota();
+      const exhaustedNow =
+        quota.remaining !== undefined && quota.remaining <= this.quotaCfg.exhaustedThreshold;
+      this.state.providers[id] = {
+        ...s,
+        serverQuota: quota,
+        lastCheck: Date.now(),
+        remaining: quota.remaining,
+        spent: quota.used,
+        exhausted: exhaustedNow ? true : false,
+        exhaustedAt: exhaustedNow ? Date.now() : undefined,
       };
       await saveState(this.state);
       return quota;
@@ -164,15 +196,21 @@ export class QuotaManager {
       exhausted: true,
       exhaustedAt: Date.now(),
       remaining: 0,
-      serverQuota: s.serverQuota ? { ...s.serverQuota, remaining: 0 } : s.serverQuota,
+      // 清除缓存时间戳 → 下次 refreshQuota 必然强制重新查询服务端验证
+      lastCheck: 0,
     };
     await saveState(this.state);
   }
 
-  /** 清除耗尽标记（用户充值/重置后，或刷新到新额度时） */
+  /** 清除耗尽标记（用户充值/重置后，或刷新到新额度时）。恢复为服务端快照的真实剩余。 */
   async clearExhausted(id: string): Promise<void> {
     const s = this.state.providers[id] ?? {};
-    this.state.providers[id] = { ...s, exhausted: false, exhaustedAt: undefined };
+    this.state.providers[id] = {
+      ...s,
+      exhausted: false,
+      exhaustedAt: undefined,
+      remaining: s.serverQuota?.remaining ?? s.remaining,
+    };
     await saveState(this.state);
   }
 

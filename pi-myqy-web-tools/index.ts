@@ -12,6 +12,7 @@
 // DuckDuckGo / SearXNG 为免费无限兜底，保证始终可搜。
 
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 import { readConfig } from "./config.ts";
@@ -157,11 +158,46 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     },
   });
 
+  // ---------------- 额度展示渲染器 ----------------
+  // 让 /web-quota 的输出在对话中呈现为好看的表格卡片
+  pi.registerMessageRenderer("web-tools/quota", (message, _options, theme) => {
+    const md = message.content as string;
+    const details = message.details as { providerCount: number; time: string } | undefined;
+    const header = details
+      ? `📊 供应商额度（${details.providerCount} 个）· ${details.time}`
+      : "📊 供应商额度";
+    const text = `${header}\n\n${md}`;
+    const box = new Box(0, 1, (t) => theme.bg("customMessageBg", t));
+    box.addChild(new Text(text, 0, 0));
+    return box;
+  });
+
   // ---------------- /web-quota 命令 ----------------
   pi.registerCommand("web-quota", {
-    description: "查看各搜索/提取供应商的剩余额度",
-    handler: async (_args, ctx) => {
-      const snapshot = await quota.snapshot();
+    description: "查看各搜索/提取供应商的剩余额度（web-quota [provider] [--refresh]）",
+    getArgumentCompletions: (prefix) => {
+      const ids = config.searchProviders.map((p) => p.id);
+      return ids
+        .filter((v) => v.startsWith(prefix))
+        .map((v) => ({ value: v, label: v }));
+    },
+    handler: async (args, ctx) => {
+      const tokens = args.trim().split(/\s+/).filter(Boolean);
+      const refresh = tokens.includes("--refresh");
+      const targets = tokens.filter((t) => t !== "--refresh");
+
+      // --refresh：清除 TTL 缓存后重新拉取
+      if (refresh) {
+        for (const q of await quota.snapshot()) {
+          await quota.refreshQuotaForce(q.provider).catch(() => {});
+        }
+      }
+
+      let snapshot = await quota.snapshot();
+      if (targets.length > 0) {
+        snapshot = snapshot.filter((q) => targets.includes(q.provider));
+      }
+
       const lines = ["| 供应商 | 总限额 | 已用 | 剩余 | 单位 | 状态 |", "|---|---|---|---|---|---|"];
       for (const q of snapshot) {
         const total = q.total !== undefined ? String(q.total) : "∞";
@@ -175,9 +211,28 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         lines.push(`| ${q.provider} | ${total} | ${used} | ${remaining} | ${q.unit} | ${status} |`);
       }
       const text = lines.join("\n");
+
+      if (snapshot.length === 0) {
+        ctx.ui.notify("未找到匹配的供应商", "warning");
+        return;
+      }
+
+      // 非交互模式（print/rpc/json）：直接输出到 stdout
+      if (ctx.mode !== "tui") {
+        console.log(text);
+        return;
+      }
+
+      // TUI 模式：注入对话为自定义消息（display: true，LLM 不可见），并弹通知
       try {
-        ctx.ui.notify?.(text, "info");
+        pi.sendMessage({
+          customType: "web-tools/quota",
+          content: text,
+          display: true,
+          details: { providerCount: snapshot.length, time: new Date().toLocaleTimeString() },
+        });
       } catch {}
+      ctx.ui.notify(`已更新额度（${snapshot.length} 个供应商）`, "info");
     },
   });
 
