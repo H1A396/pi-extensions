@@ -75,6 +75,8 @@ export class ExaProvider implements SearchProvider {
       provider: this.id,
       title: item.title !== undefined ? String(item.title) : undefined,
       content,
+      // 提取同样计费（实测 contents 响应带 costDollars.total，如 $0.001/页）
+      costUsd: typeof data.costDollars?.total === "number" ? data.costDollars.total : undefined,
     };
   }
 }

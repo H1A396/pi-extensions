@@ -96,6 +96,8 @@ export interface ExtractResponse {
   provider: string;
   title?: string;
   content: string;
+  /** 本次调用消耗（美元），余额型供应商（如 Exa）返回 */
+  costUsd?: number;
 }
 
 /** 额度信息（统一格式） */

@@ -26,7 +26,8 @@ for dir in "$SRC"/pi-myqy-*; do
   rm -rf "$DEST/$name"
   mkdir -p "$DEST/$name"
   cp -r "$dir"/. "$DEST/$name/"
-  # 清理示例配置等运行时不需要的文件
+  # 清理示例配置/README/docs 等运行时不需要的文件
   rm -f "$DEST/$name/example-config.json" "$DEST/$name/README.md"
+  rm -rf "$DEST/$name/docs"
   echo "deployed: $name → $DEST/$name/"
 done

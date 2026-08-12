@@ -211,8 +211,9 @@ export class QuotaManager {
   /**
    * 记录一次成功调用消耗。
    * - 有服务端快照的供应商：不主动扣减（下次 TTL 刷新自动校准）
-   * - 无服务端快照但提供 costUsd（Exa）：本地按美元累计（从免费额度扣）
-   * - 其他：保守扣 1 单位
+   * - 余额型供应商（Exa）：按精确 costUsd 扣减；**无 costUsd 时不扣**
+   *   （Exa 单次搜索仅 ~$0.01，若误记 1 美元会把免费额度快速"耗尽"）
+   * - 其他（按次计费）：保守扣 1 单位
    */
   async recordUsage(id: string, costUsd?: number): Promise<void> {
     if (this.isFree(id)) return;
@@ -231,7 +232,10 @@ export class QuotaManager {
       next = { ...s, baselineAt };
       this.state.providers[id] = next;
     }
-    const spent = (next.spent ?? 0) + (costUsd ?? 1);
+    // 余额型无 costUsd → 增量为 0（宁可漏记，也不误扣大额）；其余无计费信息 → 保守 1 单位
+    const increment = this.isBalanceBased(id) ? (costUsd ?? 0) : (costUsd ?? 1);
+    // 美元消耗保留 4 位小数，避免浮点误差污染 state 文件
+    const spent = Math.round(((next.spent ?? 0) + increment) * 10000) / 10000;
     const remaining =
       this.isBalanceBased(id) && costUsd !== undefined
         ? undefined // Exa 剩余由 effectiveRemaining 动态计算（免费总额 - 累计消耗）

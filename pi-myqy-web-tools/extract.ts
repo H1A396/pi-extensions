@@ -39,7 +39,8 @@ export class ExtractRouter {
 
       try {
         const resp = await provider.extract(options);
-        await this.quota.recordUsage(id).catch(() => {});
+        // 传递消耗金额（Exa 的 costDollars；免费供应商内部会跳过）
+        await this.quota.recordUsage(id, resp.costUsd).catch(() => {});
         return resp;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
