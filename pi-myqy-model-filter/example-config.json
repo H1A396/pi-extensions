@@ -1,6 +1,0 @@
-{
-  "hotReload": true,
-  "providers": {
-    "opencode": { "only": ["*-free"] }
-  }
-}
