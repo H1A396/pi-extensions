@@ -53,8 +53,13 @@
     }
   ],
 
+  "search": {
+    "order": ["tavily", "firecrawl", "duckduckgo"]
+  },
+
   "extract": {
     "strategy": "provider-first",
+    "order": ["tavily", "firecrawl", "exa", "r.jina.ai"],
     "providers": ["tavily", "firecrawl", "exa"],
     "fallbacks": ["r.jina.ai"]
   }

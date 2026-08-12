@@ -30,8 +30,22 @@ export interface WebToolsConfig {
     exaBalanceUsd: number;
   };
   searchProviders: ProviderConfig[];
+  /**
+   * 搜索策略：显式供应商顺序（从左到右）。
+   * 配置后仅使用列出的供应商，严格按数组顺序尝试；
+   * 未配置则回退为按 provider.order 字段升序。
+   */
+  search: {
+    order?: string[];
+  };
   extract: {
     strategy: "provider-first";
+    /**
+     * 提取策略：显式供应商顺序（从左到右）。
+     * 配置后仅使用列出的供应商，严格按数组顺序尝试；
+     * 未配置则回退为 providers + fallbacks。
+     */
+    order?: string[];
     /** 提取优先使用的供应商 id（按顺序） */
     providers: string[];
     /** 提取兜底方案 id 列表（如 "r.jina.ai"） */

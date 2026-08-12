@@ -30,8 +30,18 @@ export class SearchRouter {
     this.configs.set(config.id, config);
   }
 
-  /** 按 order 升序返回启用的搜索供应商 id */
+  /** 获取搜索候选供应商：优先显式策略 search.order，否则按 order 升序 */
   private orderedSearchProviders(): ProviderConfig[] {
+    const cfg = this.config.search;
+    if (cfg?.order && cfg.order.length > 0) {
+      const byId = new Map(this.config.searchProviders.map((p) => [p.id, p]));
+      const out: ProviderConfig[] = [];
+      for (const id of cfg.order) {
+        const p = byId.get(id);
+        if (p && p.enabled && p.supports.includes("search")) out.push(p);
+      }
+      return out;
+    }
     return this.config.searchProviders
       .filter((p) => p.enabled && p.supports.includes("search"))
       .sort((a, b) => a.order - b.order);

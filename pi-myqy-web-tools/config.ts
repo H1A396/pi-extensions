@@ -20,6 +20,7 @@ const DEFAULT_CONFIG: WebToolsConfig = {
   searchProviders: [
     { id: "duckduckgo", name: "DuckDuckGo", enabled: true, order: 90, supports: ["search"], free: true },
   ],
+  search: {},
   extract: {
     strategy: "provider-first",
     providers: [],
@@ -71,8 +72,17 @@ export async function readConfig(): Promise<WebToolsConfig> {
       exaBalanceUsd: typeof raw.quota?.exaBalanceUsd === "number" ? raw.quota.exaBalanceUsd : 10,
     };
 
+    const search = {
+      order: Array.isArray(raw.search?.order)
+        ? raw.search.order.map(String).filter((x: string) => x)
+        : undefined,
+    };
+
     const extract = {
       strategy: "provider-first" as const,
+      order: Array.isArray(raw.extract?.order)
+        ? raw.extract.order.map(String).filter((x: string) => x)
+        : undefined,
       providers: Array.isArray(raw.extract?.providers)
         ? raw.extract.providers.map(String)
         : [],
@@ -82,8 +92,8 @@ export async function readConfig(): Promise<WebToolsConfig> {
     };
 
     // 若未显式配置任何供应商 → 回退到默认免费兜底
-    if (providers.length === 0) return { ...DEFAULT_CONFIG, quota, extract };
-    return { version: raw.version, quota, searchProviders: providers, extract };
+    if (providers.length === 0) return { ...DEFAULT_CONFIG, quota, search, extract };
+    return { version: raw.version, quota, searchProviders: providers, search, extract };
   } catch {
     return DEFAULT_CONFIG;
   }

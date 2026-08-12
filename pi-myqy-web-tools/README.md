@@ -29,11 +29,26 @@ pi 扩展：多供应商网络搜索 + 网页提取，带额度管理与自动�
   ],
   "extract": {
     "strategy": "provider-first",
+    "order": ["tavily", "firecrawl", "exa", "r.jina.ai"],
     "providers": ["tavily", "firecrawl", "exa"],
     "fallbacks": ["r.jina.ai"]
   }
 }
 ```
+
+### 策略化（推荐）
+
+用 `search.order` / `extract.order` 显式声明供应商顺序，**写了就用、不写就不用**，严格从左到右尝试：
+
+```json
+{
+  "search":  { "order": ["tavily", "firecrawl", "exa", "duckduckgo"] },
+  "extract": { "order": ["tavily", "firecrawl", "exa", "r.jina.ai"] }
+}
+```
+
+- 未配置 `order` 时回退为旧行为：搜索按 `order` 字段升序；提取按 `providers` + `fallbacks`
+- 额度耗尽/失败的供应商自动跳过，继续尝试下一个；全部失败抛错
 
 - `order` 越小优先级越高；`free: true` 表示无限免费（不参与额度管理）
 - 可随时增删供应商（内置支持：tavily / firecrawl / exa / duckduckgo / searxng / r.jina.ai）

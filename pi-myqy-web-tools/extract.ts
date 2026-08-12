@@ -52,11 +52,24 @@ export class ExtractRouter {
     throw lastError ?? new Error("所有提取方案均失败");
   }
 
-  /** 组装提取链路：供应商自带 → fallbacks */
+  /** 组装提取链路：优先显式策略 extract.order，否则供应商自带 → fallbacks */
   private buildChain(): string[] {
-    const chain: string[] = [];
     const cfg = this.config.extract;
-    // 配置顺序的供应商（须存在且有 extract 能力）
+    const chain: string[] = [];
+
+    if (cfg.order && cfg.order.length > 0) {
+      // 显式策略：只使用列出的供应商，严格按数组顺序
+      for (const id of cfg.order) {
+        const p = this.providers.get(id);
+        if (!p?.extract || chain.includes(id)) continue;
+        // 在 searchProviders 中的需 enabled；r.jina.ai 这类兜底不在列表中直接放行
+        const pc = this.config.searchProviders.find((x) => x.id === id);
+        if (!pc || pc.enabled) chain.push(id);
+      }
+      return chain;
+    }
+
+    // 回退：配置顺序的供应商（须存在且有 extract 能力）
     for (const id of cfg.providers) {
       const p = this.providers.get(id);
       const pc = this.config.searchProviders.find((x) => x.id === id);
