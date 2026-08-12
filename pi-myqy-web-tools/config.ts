@@ -13,9 +13,10 @@ export const CONFIG_PATH = join(homedir(), ".pi/agent/pi-myqy-web-tools.json");
 const DEFAULT_CONFIG: WebToolsConfig = {
   quota: {
     refreshTtlSeconds: 300,
-    lowThreshold: 50,
-    exhaustedThreshold: 0,
-    exaBalanceUsd: 10,
+    lowThresholdPercent: 20,
+    exhaustedThresholdPercent: 0,
+    exaInitialFreeUsd: 20,
+    exaMonthlyTopUpUsd: 10,
   },
   searchProviders: [
     { id: "duckduckgo", name: "DuckDuckGo", enabled: true, order: 90, supports: ["search"], free: true },
@@ -66,10 +67,22 @@ export async function readConfig(): Promise<WebToolsConfig> {
     const quota = {
       refreshTtlSeconds:
         typeof raw.quota?.refreshTtlSeconds === "number" ? raw.quota.refreshTtlSeconds : 300,
-      lowThreshold: typeof raw.quota?.lowThreshold === "number" ? raw.quota.lowThreshold : 50,
-      exhaustedThreshold:
-        typeof raw.quota?.exhaustedThreshold === "number" ? raw.quota.exhaustedThreshold : 0,
-      exaBalanceUsd: typeof raw.quota?.exaBalanceUsd === "number" ? raw.quota.exaBalanceUsd : 10,
+      lowThresholdPercent:
+        typeof raw.quota?.lowThresholdPercent === "number"
+          ? raw.quota.lowThresholdPercent
+          : 20,
+      exhaustedThresholdPercent:
+        typeof raw.quota?.exhaustedThresholdPercent === "number"
+          ? raw.quota.exhaustedThresholdPercent
+          : 0,
+      exaInitialFreeUsd:
+        typeof raw.quota?.exaInitialFreeUsd === "number" ? raw.quota.exaInitialFreeUsd : 20,
+      exaMonthlyTopUpUsd:
+        typeof raw.quota?.exaMonthlyTopUpUsd === "number" ? raw.quota.exaMonthlyTopUpUsd : 10,
+      exaAccountCreatedAt:
+        typeof raw.quota?.exaAccountCreatedAt === "string"
+          ? raw.quota.exaAccountCreatedAt
+          : undefined,
     };
 
     const search = {

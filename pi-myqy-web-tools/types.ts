@@ -22,12 +22,22 @@ export interface WebToolsConfig {
   quota: {
     /** 额度查询结果缓存时长（秒） */
     refreshTtlSeconds: number;
-    /** 剩余额度低于此值视为"低配额" */
-    lowThreshold: number;
-    /** 剩余额度等于/低于此值视为耗尽 */
-    exhaustedThreshold: number;
-    /** Exa 账户初始余额（美元） */
-    exaBalanceUsd: number;
+    /**
+     * 低配额预警阈值（占免费额度的百分比，1-100）。
+     * 剩余免费额度 ≤ 免费总额度 × percent% 时标记为低配额。
+     */
+    lowThresholdPercent: number;
+    /**
+     * 耗尽阈值（占免费额度的百分比）。
+     * 剩余免费额度 ≤ 免费总额度 × percent% 时视为耗尽。
+     */
+    exhaustedThresholdPercent: number;
+    /** Exa 免费额度模型：初始免费额度（美元） */
+    exaInitialFreeUsd: number;
+    /** Exa 免费额度模型：Free Tier 每月补充额度（美元） */
+    exaMonthlyTopUpUsd: number;
+    /** Exa 账号创建时间（ISO）。缺省用首次使用时间。 */
+    exaAccountCreatedAt?: string;
   };
   searchProviders: ProviderConfig[];
   /**
@@ -125,6 +135,8 @@ export interface ProviderQuotaState {
   exhausted?: boolean;
   /** 耗尽快照时间戳 */
   exhaustedAt?: number;
+  /** 余额型供应商（Exa）计费基准时间戳（账号创建/首次使用） */
+  baselineAt?: number;
 }
 
 export interface QuotaStateFile {

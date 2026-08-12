@@ -198,16 +198,19 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         snapshot = snapshot.filter((q) => targets.includes(q.provider));
       }
 
-      const lines = ["| 供应商 | 总限额 | 已用 | 剩余 | 单位 | 状态 |", "|---|---|---|---|---|---|"];
+      const lines = ["| 供应商 | 免费总额 | 已用 | 剩余 | 单位 | 状态 |", "|---|---|---|---|---|---|"];
       for (const q of snapshot) {
         const total = q.total !== undefined ? String(q.total) : "∞";
         const remaining = q.remaining !== undefined ? String(q.remaining) : "—";
         const used = q.used !== undefined ? String(q.used) : "—";
-        const status = q.exhausted
-          ? "⚠️ 耗尽"
-          : q.remaining !== undefined && q.remaining <= config.quota.lowThreshold
-            ? "低配额"
-            : "正常";
+        let status = "正常";
+        if (q.exhausted) {
+          status = "⚠️ 耗尽";
+        } else if (q.remaining !== undefined && q.total !== undefined && q.total > 0) {
+          const ratio = q.remaining / q.total;
+          if (ratio <= config.quota.exhaustedThresholdPercent / 100) status = "⚠️ 耗尽";
+          else if (ratio <= config.quota.lowThresholdPercent / 100) status = "低配额";
+        }
         lines.push(`| ${q.provider} | ${total} | ${used} | ${remaining} | ${q.unit} | ${status} |`);
       }
       const text = lines.join("\n");

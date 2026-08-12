@@ -4,9 +4,11 @@
 
   "quota": {
     "refreshTtlSeconds": 300,
-    "lowThreshold": 50,
-    "exhaustedThreshold": 0,
-    "exaBalanceUsd": 10.0
+    "lowThresholdPercent": 20,
+    "exhaustedThresholdPercent": 0,
+    "exaInitialFreeUsd": 20,
+    "exaMonthlyTopUpUsd": 10,
+    "exaAccountCreatedAt": "2026-07-17"
   },
 
   "searchProviders": [

@@ -73,29 +73,67 @@ export class QuotaManager {
     return this.state.providers[id] ?? {};
   }
 
-  /** 有效剩余额度：优先服务端快照，其次本地估算 */
+  // ---------- 免费额度模型 ----------
+
+  /**
+   * 计算某供应商累计可用的免费额度总量。
+   * - 服务端型（Tavily/Firecrawl）：serverQuota.total（官方每月免费额度）
+   * - 余额型（Exa）：初始 $20 + 每月 $10 × 已过月数（自账号创建/首次使用起）
+   * - 未知：undefined（不参与百分比预警）
+   */
+  private freeTotal(id: string, s: ProviderQuotaState): number | undefined {
+    if (s.serverQuota?.total !== undefined) return s.serverQuota.total;
+    if (this.isBalanceBased(id)) {
+      return this.exaFreeTotal(s);
+    }
+    return undefined;
+  }
+
+  /** Exa 累计免费额度 = 初始 + 每月补充 × 月数 */
+  private exaFreeTotal(s: ProviderQuotaState): number | undefined {
+    const { exaInitialFreeUsd, exaMonthlyTopUpUsd } = this.quotaCfg;
+    const baseline = s.baselineAt;
+    if (baseline === undefined) return exaInitialFreeUsd;
+    const months = Math.floor((Date.now() - baseline) / (30 * 24 * 3600 * 1000));
+    return exaInitialFreeUsd + Math.max(0, months) * exaMonthlyTopUpUsd;
+  }
+
+  /** 有效剩余免费额度：优先服务端快照，其次本地估算 */
   private effectiveRemaining(id: string, s: ProviderQuotaState): number | undefined {
     if (s.serverQuota?.remaining !== undefined) return s.serverQuota.remaining;
+    if (this.isBalanceBased(id)) {
+      const total = this.exaFreeTotal(s);
+      return total !== undefined ? Math.max(0, total - (s.spent ?? 0)) : undefined;
+    }
     return s.remaining;
   }
 
-  /** 该供应商当前是否被认为耗尽 */
+  /** 剩余占比（0-1）；总额未知 → undefined */
+  private remainingRatio(id: string, s: ProviderQuotaState): number | undefined {
+    const total = this.freeTotal(id, s);
+    const rem = this.effectiveRemaining(id, s);
+    if (total === undefined || rem === undefined || total <= 0) return undefined;
+    return rem / total;
+  }
+
+  /** 该供应商当前是否被认为耗尽（剩余 ≤ 免费总额 × exhaustedPercent%） */
   isExhausted(id: string): boolean {
     const s = this.state.providers[id];
     if (!s) return false;
     if (s.exhausted) return true;
-    const rem = this.effectiveRemaining(id, s);
-    if (rem === undefined) return false; // 未知额度 → 不拦截
-    return rem <= this.quotaCfg.exhaustedThreshold;
+    const ratio = this.remainingRatio(id, s);
+    if (ratio === undefined) return false; // 未知额度 → 不拦截
+    return ratio <= this.quotaCfg.exhaustedThresholdPercent / 100;
   }
 
-  /** 是否低配额（用于排序后移） */
+  /** 是否低配额（用于排序后移/预警） */
   isLow(id: string): boolean {
     const s = this.state.providers[id];
     if (!s) return false;
-    const rem = this.effectiveRemaining(id, s);
-    if (rem === undefined) return false;
-    return rem > this.quotaCfg.exhaustedThreshold && rem <= this.quotaCfg.lowThreshold;
+    const ratio = this.remainingRatio(id, s);
+    if (ratio === undefined) return false;
+    const exPercent = this.quotaCfg.exhaustedThresholdPercent / 100;
+    return ratio > exPercent && ratio <= this.quotaCfg.lowThresholdPercent / 100;
   }
 
   /**
@@ -116,8 +154,12 @@ export class QuotaManager {
 
     try {
       const quota = await provider.getQuota();
+      const ratio =
+        quota.remaining !== undefined && quota.total !== undefined && quota.total > 0
+          ? quota.remaining / quota.total
+          : undefined;
       const exhaustedNow =
-        quota.remaining !== undefined && quota.remaining <= this.quotaCfg.exhaustedThreshold;
+        ratio !== undefined && ratio <= this.quotaCfg.exhaustedThresholdPercent / 100;
       this.state.providers[id] = {
         ...s,
         serverQuota: quota,
@@ -144,8 +186,12 @@ export class QuotaManager {
     const s = this.state.providers[id] ?? {};
     try {
       const quota = await provider.getQuota();
+      const ratio =
+        quota.remaining !== undefined && quota.total !== undefined && quota.total > 0
+          ? quota.remaining / quota.total
+          : undefined;
       const exhaustedNow =
-        quota.remaining !== undefined && quota.remaining <= this.quotaCfg.exhaustedThreshold;
+        ratio !== undefined && ratio <= this.quotaCfg.exhaustedThresholdPercent / 100;
       this.state.providers[id] = {
         ...s,
         serverQuota: quota,
@@ -165,7 +211,7 @@ export class QuotaManager {
   /**
    * 记录一次成功调用消耗。
    * - 有服务端快照的供应商：不主动扣减（下次 TTL 刷新自动校准）
-   * - 无服务端快照但提供 costUsd（Exa）：本地按美元累计
+   * - 无服务端快照但提供 costUsd（Exa）：本地按美元累计（从免费额度扣）
    * - 其他：保守扣 1 单位
    */
   async recordUsage(id: string, costUsd?: number): Promise<void> {
@@ -175,16 +221,24 @@ export class QuotaManager {
       // 服务端额度：本地仅记录调用次数，不主动扣减
       return;
     }
-    const spent = (s.spent ?? 0) + (costUsd ?? 1);
-    let remaining = s.remaining;
-    if (costUsd !== undefined) {
-      // 余额型（Exa）：剩余 = 初始余额 - 累计消耗
-      const balance = this.isBalanceBased(id) ? this.quotaCfg.exaBalanceUsd : undefined;
-      remaining = balance !== undefined ? Math.max(0, balance - spent) : undefined;
-    } else if (remaining !== undefined) {
-      remaining = Math.max(0, remaining - 1);
+    // Exa 首次使用时记录计费基准（账号创建时间或首次使用）
+    let next = s;
+    if (this.isBalanceBased(id) && s.baselineAt === undefined) {
+      const created = this.quotaCfg.exaAccountCreatedAt
+        ? Date.parse(this.quotaCfg.exaAccountCreatedAt)
+        : undefined;
+      const baselineAt = created && !Number.isNaN(created) ? created : Date.now();
+      next = { ...s, baselineAt };
+      this.state.providers[id] = next;
     }
-    this.state.providers[id] = { ...s, spent, remaining };
+    const spent = (next.spent ?? 0) + (costUsd ?? 1);
+    const remaining =
+      this.isBalanceBased(id) && costUsd !== undefined
+        ? undefined // Exa 剩余由 effectiveRemaining 动态计算（免费总额 - 累计消耗）
+        : next.remaining !== undefined
+          ? Math.max(0, next.remaining - 1)
+          : undefined;
+    this.state.providers[id] = { ...next, spent, remaining };
     await saveState(this.state);
   }
 
@@ -228,21 +282,18 @@ export class QuotaManager {
         out.push(quota);
       } else {
         const unit = this.isBalanceBased(id) ? "usd" : "credits";
-        // 余额型供应商（Exa）：剩余 = 初始余额 - 累计消耗
-        const remaining =
-          s.remaining !== undefined
-            ? s.remaining
-            : this.isBalanceBased(id)
-              ? Math.max(0, this.quotaCfg.exaBalanceUsd - (s.spent ?? 0))
-              : undefined;
+        // 余额型供应商（Exa）：总额 = 累计免费额度，剩余 = 总额 - 累计消耗
+        const total = this.freeTotal(id, s);
+        const remaining = this.effectiveRemaining(id, s);
+        const ratio = this.remainingRatio(id, s);
         out.push({
           provider: id,
-          total: this.isBalanceBased(id) ? this.quotaCfg.exaBalanceUsd : undefined,
+          total,
           used: s.spent ?? 0,
           remaining,
           unit,
           updatedAt: s.lastCheck ?? 0,
-          exhausted: !!s.exhausted,
+          exhausted: !!s.exhausted || (ratio !== undefined && ratio <= this.quotaCfg.exhaustedThresholdPercent / 100),
         });
       }
     }
